@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 
 export async function addBookmark(formData: FormData) {
     const title = formData.get('title') as string
@@ -34,5 +35,6 @@ export async function deleteBookmark(id: string) {
 export async function signOut() {
     const supabase = createClient()
     await supabase.auth.signOut()
-    return { success: true }
+    revalidatePath('/', 'layout')
+    redirect('/login')
 }
