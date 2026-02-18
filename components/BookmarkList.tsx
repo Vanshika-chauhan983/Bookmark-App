@@ -5,16 +5,16 @@ import { Bookmark } from '@/types/custom'
 import { useEffect, useState } from 'react'
 import { deleteBookmark } from '@/app/actions'
 import { Trash2, ExternalLink, Globe } from 'lucide-react'
+import { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
+import { useRouter } from 'next/navigation'
 
 export default function BookmarkList({ initialBookmarks }: { initialBookmarks: Bookmark[] }) {
     const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialBookmarks)
-    const supabase = createClient()
+    const [supabase] = useState(() => createClient())
+    const router = useRouter()
 
+    // Realtime Subscription
     useEffect(() => {
-        // Determine the current user to filter events if necessary (though RLS handles security)
-        // We can just listen to the 'bookmarks' table changes.
-        // Since we have RLS, we only receive events for rows we have access to.
-
         const channel = supabase
             .channel('realtime bookmarks')
             .on(
@@ -24,7 +24,7 @@ export default function BookmarkList({ initialBookmarks }: { initialBookmarks: B
                     schema: 'public',
                     table: 'bookmarks',
                 },
-                (payload) => {
+                (payload: RealtimePostgresChangesPayload<Bookmark>) => {
                     if (payload.eventType === 'INSERT') {
                         setBookmarks((current) => [payload.new as Bookmark, ...current])
                     } else if (payload.eventType === 'DELETE') {
@@ -39,6 +39,24 @@ export default function BookmarkList({ initialBookmarks }: { initialBookmarks: B
         return () => {
             supabase.removeChannel(channel)
         }
+    }, [supabase])
+
+    // Polling Fallback (ensures data is always fresh even if Realtime fails)
+    useEffect(() => {
+        const interval = setInterval(async () => {
+            const { data } = await supabase
+                .from('bookmarks')
+                .select('*')
+                .order('created_at', { ascending: false })
+
+            if (data) {
+                // Only update if data is different to avoid unnecessary re-renders
+                // simple length check or deep comparison could be better, but direct set is safe enough for this scale
+                setBookmarks(data)
+            }
+        }, 2000) // Poll every 2 seconds
+
+        return () => clearInterval(interval)
     }, [supabase])
 
     const handleDelete = async (id: string) => {
